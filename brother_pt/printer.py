@@ -14,71 +14,41 @@
    limitations under the License.
 """
 import sys
-
-import usb.core
-import usb.util
 import warnings
 
 from .cmd import *
 from .raster import *
-
-
-def find_printers(serial=None):
-    found_printers = []
-    for product_id in SupportedPrinterIDs:
-        dev = usb.core.find(idVendor=USBID_BROTHER, idProduct=product_id)
-        if dev is not None:
-            if serial is not None:
-                if serial == dev.serial_number:
-                    found_printers.append(dev)
-                else:
-                    continue
-            else:
-                found_printers.append(dev)
-
-    return found_printers
+from .usb_transport import USBTransport
+from .bluetooth_transport import BluetoothTransport
 
 
 class BrotherPt:
-    def __init__(self, serial: str = None):
-        printers = find_printers(serial)
-        if len(printers) == 0:
-            raise RuntimeError("No supported driver found")
+    def __init__(self, transport):
+        self._transport = transport
 
         self._media_width = None
         self._media_type = None
         self._tape_color = None
         self._text_color = None
 
-        self._dev = printers[0]
-        self.__initialize()
-
-    def __initialize(self):
-        # libusb initialization, and bypass kernel drivers
-        if self._dev.is_kernel_driver_active(0):
-            self._dev.detach_kernel_driver(0)
-
-        self._dev.set_configuration()
         self.update_status()
 
-    def __del__(self):
-        usb.util.dispose_resources(self._dev)
+    @classmethod
+    def usb(cls, serial: str = None) -> "BrotherPt":
+        return cls(USBTransport(serial))
+
+    @classmethod
+    def bluetooth(cls, address: str, channel: int = 1) -> "BrotherPt":
+        return cls(BluetoothTransport(address, channel))
+
+    def close(self) -> None:
+        self._transport.close()
 
     def __write(self, data: bytes) -> int:
-        length = 0
-        while length < len(data):
-            # chunk into packet size
-            length += self._dev.write(USB_OUT_EP_ID, data[length:(length+0x40)], USB_TRX_TIMEOUT_MS)
-            if length == 0:
-                raise RuntimeError("IO timeout while writing to printer")
-        return length
+        return self._transport.write(data)
 
     def __read(self, length: int = 0x80) -> bytes:
-        try:
-            data = self._dev.read(USB_IN_EP_ID, length, USB_TRX_TIMEOUT_MS)
-        except usb.core.USBError as e:
-            raise RuntimeError("IO timeout while reading from printer")
-        return data
+        return self._transport.read(length)
 
     def update_status(self):
         self.__write(invalidate())
@@ -109,12 +79,25 @@ class BrotherPt:
     def text_color(self) -> TextColor:
         return self._text_color
 
-    def print_data(self, data:bytes, margin_px:int):
+    def print_data(self, data: bytes, margin_px: int, half_cut: bool = True):
+        advanced_mode = AdvancedMode.NO_CHAINING
+        mode = Mode.AUTO_CUT
+        if half_cut:
+            # Verified on a PT-E560BT: HALF_CUT + CUT_ON_LAST_LABEL with AUTO_CUT off
+            # produces a leading score cut (peel tab) plus the trailing separating cut,
+            # with no wasted blank leading cut. The plain AUTO_CUT/NO_CHAINING path
+            # (half_cut=False) was found to feed and fully cut a wasted blank leading
+            # piece before the real content -- true even with pristine, unmodified
+            # upstream code, so it isn't something introduced by this library. Default
+            # to half_cut=True since it's the only mode that avoids that waste.
+            # Unverified on other printer models.
+            advanced_mode |= AdvancedMode.HALF_CUT | AdvancedMode.CUT_ON_LAST_LABEL
+            mode = Mode(0)
         self.__write(enter_dynamic_command_mode())
         self.__write(enable_status_notification())
         self.__write(print_information(data, self.media_width))
-        self.__write(set_mode())
-        self.__write(set_advanced_mode())
+        self.__write(set_mode(mode))
+        self.__write(set_advanced_mode(advanced_mode))
         self.__write(margin_amount(margin_px))
         self.__write(set_compression_mode())
         for cmd in gen_raster_commands(data):
@@ -124,8 +107,11 @@ class BrotherPt:
             res = self.__read()
             if len(res) > 0:
                 if res[StatusOffsets.STATUS_TYPE] == StatusType.PRINTING_COMPLETED:
-                    # absorb phase change message
-                    self.__read()
+                    # absorb phase change message, if any -- not all transports/models send one
+                    try:
+                        self.__read()
+                    except RuntimeError:
+                        pass
                     break
                 elif res[StatusOffsets.STATUS_TYPE] == StatusType.ERROR_OCCURRED:
                     error_message = ''
@@ -150,18 +136,18 @@ class BrotherPt:
                         error_message = error_message[:-1]
                     raise RuntimeError(error_message)
 
-    def print_image(self, image: Image, margin_px: int = 0):
+    def print_image(self, image: Image, margin_px: int = 0, half_cut: bool = True):
         self.update_status()
         image = prepare_image(image, self.media_width)
         if (image.width + margin_px) < MINIMUM_TAPE_POINTS:
             warnings.warn("Image (%i) + cut margin (%i) is smaller than minimum tape width (%i) ... "
                           "cutting length will be extended" % (image.width, margin_px, MINIMUM_TAPE_POINTS))
         data = raster_image(image, self.media_width)
-        self.print_data(data, margin_px)
+        self.print_data(data, margin_px, half_cut)
 
 
 if __name__ == '__main__':
-    printer = BrotherPt()
+    printer = BrotherPt.usb()
     print("Media width: %dmm" % printer.media_width)
     print("Media type : %s" % printer.media_type.name)
     print("Tape color : %s" % printer.tape_color.name)

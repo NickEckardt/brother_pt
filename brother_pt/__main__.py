@@ -17,6 +17,7 @@ import argparse
 
 from brother_pt import VERSION
 from .printer import *
+from .usb_transport import find_printers
 
 
 def show_status(serial):
@@ -24,7 +25,7 @@ def show_status(serial):
     if len(printers) == 0:
         print("No supported printers found, make sure the device is switched on", file=sys.stderr)
         return 1
-    found_printer = BrotherPt(printers[0].serial_number)
+    found_printer = BrotherPt.usb(printers[0].serial_number)
     print("%s %s (%s):" % (printers[0].manufacturer, printers[0].product, printers[0].serial_number))
     print(" + Media width: %dmm" % found_printer.media_width)
     print(" + Media type : %s" % found_printer.media_type.name)
@@ -40,7 +41,7 @@ def do_print(args):
         print("No supported printers found, make sure the device is switched on", file=sys.stderr)
         return 1
 
-    found_printer = BrotherPt(printers[0].serial_number)
+    found_printer = BrotherPt.usb(printers[0].serial_number)
 
     image = Image.open(args.file)
     required_height = MediaWidthToTapeMargin.to_print_width(found_printer.media_width)

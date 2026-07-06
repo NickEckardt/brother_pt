@@ -91,6 +91,15 @@ class Mode(IntFlag):
     MIRROR_PRINTING = 0x80
 
 
+class AdvancedMode(IntFlag):
+    HALF_CUT = 0x04
+    NO_CHAINING = 0x08
+    NO_CUT_ON_SPECIAL_TAPE = 0x10
+    CUT_ON_LAST_LABEL = 0x20
+    HIGH_RESOLUTION = 0x40
+    PRESERVE_BUFFER = 0x80
+
+
 class StatusType(IntEnum):
     REPLY_TO_STATUS_REQUEST = 0x00
     PRINTING_COMPLETED = 0x01
@@ -186,9 +195,13 @@ def enable_status_notification():
     return b"\x1B\x69\x21\x00"
 
 
-def print_information(data: bytes, media_width_mm: int):
-    # print to arbitrary-width tape [1B 69 7A {84 00 <width> 00 <data length 4 bytes> 00 00}]
-    data = b"\x1B\x69\x7A\x84\x00"+media_width_mm.to_bytes(1, 'little')+b"\x00" + \
+def print_information(data: bytes, media_width_mm: int, length_mm: int = 0):
+    # print to arbitrary-width tape [1B 69 7A {<active_fields> 00 <width> <length> <data length 4 bytes> 00 00}]
+    active_fields = 0x84
+    if length_mm:
+        active_fields |= 0x08  # PrintParameterField.length
+    data = b"\x1B\x69\x7A" + active_fields.to_bytes(1, 'little') + b"\x00" + \
+           media_width_mm.to_bytes(1, 'little') + length_mm.to_bytes(1, 'little') + \
            (len(data) >> 4).to_bytes(4, 'little') + \
            b"\x00\x00"
     return data
@@ -200,9 +213,9 @@ def set_mode(mode: Mode = Mode.AUTO_CUT):
         mode.to_bytes(1, "big")
 
 
-def set_advanced_mode():
-    # set print chaining off [1B 69 4B {08}]
-    return b"\x1B\x69\x4B\x08"
+def set_advanced_mode(mode: AdvancedMode = AdvancedMode.NO_CHAINING):
+    # set advanced mode settings, e.g. print chaining off, half cut [1B 69 4B {08}]
+    return b"\x1B\x69\x4B" + mode.to_bytes(1, "big")
 
 
 def margin_amount(dots: int = 0):

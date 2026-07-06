@@ -1,0 +1,23 @@
+<type>(<scope>): <subject>
+
+**What**
+-
+
+**Why**
+-
+
+**Testing Notes**
+-
+
+# Conventional Commit header: <type>(<scope>): <subject>
+#   Types: feat, fix, docs, style, refactor, perf, test, chore, build, ci
+#   Example: feat(bluetooth): add RFCOMM transport support
+#
+# What / Why / Testing Notes: a few bullets each, prose within each
+# bullet. Group related changes into one bullet rather than listing
+# every file/detail separately -- aim for 2-3 bullets per section, not
+# an exhaustive itemized list.
+#
+# No Co-Authored-By trailer on commits in this repo.
+#
+# Lines starting with '#' are stripped automatically.

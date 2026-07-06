@@ -11,13 +11,14 @@ In particular, the following is supported:
  * You can print image files directly from a Python script 
  * Supported backends
     * pyusb
+    * Bluetooth (classic RFCOMM/SPP, Linux only -- see `examples/`)
     * Planned: linux kernel [usblp](https://github.com/torvalds/linux/blob/master/drivers/usb/class/usblp.c) backend
-    * Planned: Bluetooth 
 
 The following printers are supported by this package (✓ means verified by the author):
  * PT-P710BT (✓)
  * PT-E550W
- * PT-P750W 
+ * PT-P750W
+ * PT-E560BT (✓ over Bluetooth)
 
 Planned (not officially supported yet)
  * PT-P900
